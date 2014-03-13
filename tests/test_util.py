@@ -12,6 +12,8 @@ from __future__ import division
 from tempfile import NamedTemporaryFile
 from os.path import exists
 import sys
+from unittest import TestCase, main
+
 from cogent import LoadSeqs, DNA
 from cogent.util.misc import remove_files
 from cogent.core.alignment import DenseAlignment
@@ -19,7 +21,7 @@ from cogent.app.muscle_v38 import align_unaligned_seqs as muscle_align_unaligned
 from cogent.app.mafft import align_unaligned_seqs as mafft_align_unaligned_seqs
 from cogent.app.clustalw import align_unaligned_seqs as clustal_align_unaligned_seqs
 from cogent.parse.fasta import MinimalFastaParser
-from cogent.util.unit_test import TestCase, main
+
 from pynast.util import (align_two_seqs, reintroduce_template_spacing, 
  adjust_alignment, nearest_gap, pynast_seq,
  introduce_terminal_gaps, UnalignableSequenceError, pynast_seqs,
