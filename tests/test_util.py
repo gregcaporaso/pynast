@@ -11,33 +11,28 @@
 from __future__ import division
 from tempfile import NamedTemporaryFile
 from os.path import exists
+from os import remove
 import sys
 from unittest import TestCase, main
-
-from cogent import LoadSeqs, DNA
-from cogent.util.misc import remove_files
-from cogent.core.alignment import DenseAlignment
-from cogent.app.muscle_v38 import align_unaligned_seqs as muscle_align_unaligned_seqs
-from cogent.app.mafft import align_unaligned_seqs as mafft_align_unaligned_seqs
-from cogent.app.clustalw import align_unaligned_seqs as clustal_align_unaligned_seqs
-from cogent.parse.fasta import MinimalFastaParser
 
 from pynast.util import (align_two_seqs, reintroduce_template_spacing, 
  adjust_alignment, nearest_gap, pynast_seq,
  introduce_terminal_gaps, UnalignableSequenceError, pynast_seqs,
- pair_hmm_align_unaligned_seqs, blast_align_unaligned_seqs, ipynast_seqs,
+ blast_align_unaligned_seqs, ipynast_seqs,
  remove_template_terminal_gaps, get_pynast_temp_dir)
 from pynast.logger import NastLogger
 
+from bipy.core.alignment import SequenceCollection, Alignment
+from bipy.core.sequence import DNA
+from bipy.parse.fasta import MinimalFastaParser
+
 class PyNastTests(TestCase):
-    """ Tests of the PyNAST functionality
-    """
     
     def setUp(self):
-        """ """
         self.files_to_remove = []
+
         self.full_length_test1_input_seqs =\
-         LoadSeqs(data=input_seqs1_fasta,moltype=DNA,aligned=False)
+         SequenceCollection.from_fasta_records(MinimalFastaParser(input_seqs1_fasta),DNA)
 
         # Note that delete = False here for all temp file creation 
         # because we don't want these to be deleted when they are closed 
@@ -52,12 +47,11 @@ class PyNastTests(TestCase):
          full_length_test1_input_seqs_f.name
         full_length_test1_input_seqs_f.write(input_seqs1_fasta)
         full_length_test1_input_seqs_f.close()
-        self.files_to_remove.append(self.full_length_test1_input_seqs_fp)
         
         self.full_length_test1_input_seqs_lines = input_seqs1_fasta.split('\n')
         
         self.full_length_test1_template_aln = \
-         LoadSeqs(data=pynast_test_template_fasta1,moltype=DNA,aligned=DenseAlignment)
+         Alignment.from_fasta_records(MinimalFastaParser(pynast_test_template_fasta1),DNA)
         
         full_length_test1_template_aln_f = \
          NamedTemporaryFile(prefix='PyNastTest',
@@ -67,19 +61,18 @@ class PyNastTests(TestCase):
         self.full_length_test1_template_aln_fp = \
          full_length_test1_template_aln_f.name
         full_length_test1_template_aln_f.write(
-         self.full_length_test1_template_aln.toFasta())
+         self.full_length_test1_template_aln.to_fasta())
         full_length_test1_template_aln_f.close()
-        self.files_to_remove.append(self.full_length_test1_template_aln_fp)
         
         self.full_length_test1_expected_aln = \
-         LoadSeqs(data=input_seqs1_aligned_fasta,moltype=DNA,aligned=DenseAlignment)
+         Alignment.from_fasta_records(MinimalFastaParser(input_seqs1_aligned_fasta),DNA)
         self.full_length_test1_expected_fail = \
-         LoadSeqs(data=input_seqs1_fail_fasta,moltype=DNA,aligned=False)
+         SequenceCollection.from_fasta_records(MinimalFastaParser(input_seqs1_fail_fasta),DNA)
          
         self.full_length_test2_input_seqs =\
-         LoadSeqs(data=input_seqs2_fasta,moltype=DNA,aligned=False)
+         SequenceCollection.from_fasta_records(MinimalFastaParser(input_seqs2_fasta),DNA)
         self.full_length_test2_template_aln = \
-         LoadSeqs(data=pynast_test_template_fasta2,moltype=DNA,aligned=DenseAlignment)
+         SequenceCollection.from_fasta_records(MinimalFastaParser(pynast_test_template_fasta2),DNA)
         
         self.input_seqs_gaps = input_seqs_gaps.split('\n')
         
@@ -88,12 +81,10 @@ class PyNastTests(TestCase):
                                       dir=get_pynast_temp_dir(),
                                       delete=False)
         self.log_filename = log_file.name
-        self.files_to_remove.append(self.log_filename)
 
     def tearDown(self):
-        """ Clean up temporary files created by the tests
-        """
-        remove_files(self.files_to_remove)
+        for fp in self.files_to_remove:
+            remove(fp)
 
     def test_pynast_logging(self):
         """pynast_seqs() should write log file with correct contents
@@ -139,8 +130,8 @@ class PyNastTests(TestCase):
         # failed to align
         seq_id = 'FAKE1 here is some desc.73602 tag1;tag2, tag3:tag4'
         expected = [\
-         DNA.makeSequence(self.full_length_test1_expected_fail.getSeq(seq_id),\
-         Name=seq_id)]
+         DNA(self.full_length_test1_expected_fail.get_seq(seq_id),\
+         identifier=seq_id)]
         
         self.assertEqual(actual[1],expected)
       
@@ -152,14 +143,14 @@ class PyNastTests(TestCase):
         # Build the expected result object, which is a list of 
         # dna sequence objects where names include the aligned span
         expected_seqs = []
-        for n in template_aln.Names:
+        for n in template_aln.identifiers():
             expected_seqs.append(\
-             DNA.makeSequence(\
-              str(template_aln.getGappedSeq(n)),\
-              Name='%s 1..%d' % (n,len(template_aln.getSeq(n).degap()))))
+             DNA(\
+              str(template_aln.get_seq(n)),\
+              identifier='%s 1..%d' % (n,len(template_aln.get_seq(n).degap()))))
           
-        expected_aln = LoadSeqs(data=expected_seqs,\
-            moltype=DNA,aligned=DenseAlignment) 
+        expected_aln = SequenceCollection.from_fasta_records(
+                expected_seqs, DNA)
         input_seqs = self.full_length_test1_template_aln.degap()
         
         # run pynast_seqs on the input sequences
@@ -169,8 +160,7 @@ class PyNastTests(TestCase):
          align_unaligned_seqs_f=None)
         
         # Load the result into an alignment object
-        actual_aln = LoadSeqs(data=actual[0],moltype=DNA,\
-         aligned=DenseAlignment)
+        actual_aln = Alignment.from_fasta_records([actual[0]])
         
         # alignment length is correct
         self.assertEqual(len(actual_aln),len(template_aln))
@@ -179,18 +169,18 @@ class PyNastTests(TestCase):
         self.assertEqual(actual_aln.getNumSeqs(),expected_aln.getNumSeqs())
         
         # same collection of seq ids is returned
-        actual_names = actual_aln.Names
+        actual_names = actual_aln.identifiers
         actual_names.sort()
-        expected_names = expected_aln.Names
+        expected_names = expected_aln.identifiers
         expected_names.sort()
         self.assertEqual(actual_names,expected_names)
         
         # all sequence lengths match expected sequence lengths (ie, no
         # missing bases)
-        for seq_id in actual_aln.Names:
+        for seq_id in actual_aln.identifiers:
             self.assertEqual(\
-             len(actual_aln.getSeq(seq_id)),\
-             len(expected_aln.getSeq(seq_id)))      
+             len(actual_aln.get_seq(seq_id)),\
+             len(expected_aln.get_seq(seq_id)))      
 
         # resulting list of dna sequence objects is as expected
         # (this would take care of some of the above tests, but testing
@@ -227,12 +217,11 @@ class PyNastTests(TestCase):
         # Build the expected result object, which is a list of 
         # dna sequence objects where names include the aligned span
         expected_seqs = []
-        for n in expected_aln.Names:
+        for n in expected_aln.identifiers:
             expected_seqs.append(\
-             DNA.makeSequence(str(expected_aln.getGappedSeq(n)),Name=n))
+             DNA(str(expected_aln.getGappedSeq(n)), identifier=n))
              
-        actual_aln = LoadSeqs(data=actual[0],moltype=DNA,\
-         aligned=DenseAlignment)    
+        actual_aln = Alignment.from_fasta_record([actual[0]])    
                 
         # Resulting list of dna sequence objects is as expected
         # (this would take care of some of the above tests, but testing
@@ -242,8 +231,8 @@ class PyNastTests(TestCase):
         # does local alignments, so sometimes loses terminal bases. PyNAST
         # does global alignments, so the candidate only lose terminal bases
         # if they introduce terminal gaps in the template alignments.
-        a_list = [(a.Name.split()[0], a) for a in actual[0]]
-        e_list = [(e.Name.split()[0], e) for e in expected_seqs]
+        a_list = [(a.identifier.split()[0], a) for a in actual[0]]
+        e_list = [(e.identifier.split()[0], e) for e in expected_seqs]
         a_list.sort()
         e_list.sort()
         
@@ -277,9 +266,9 @@ class PyNastTests(TestCase):
          ('3','AA')]
          
         expected_aln = [\
-         DNA.makeSequence('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',Name='1'),\
-         DNA.makeSequence('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',Name='2')]
-        expected_fail = [DNA.makeSequence('AA',Name='3')]
+         DNA('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---', identifier='1'),\
+         DNA('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---', identifier='2')]
+        expected_fail = [DNA('AA', identifier='3')]
         
         actual = pynast_seqs(candidate_seqs,db_aln2,min_len=5,min_pct=75.0)
         self.assertEqual(actual,(expected_aln,expected_fail))
@@ -288,52 +277,14 @@ class PyNastTests(TestCase):
         # all fail when min_len restricts matches
         expected_aln = []
         expected_fail = [\
-         DNA.makeSequence('ACGTACGTTAATACCCTGGTAGT',Name='1'),\
-         DNA.makeSequence('ACGTACGTTAATACCCTGGTAGT',Name='2'),\
-         DNA.makeSequence('AA',Name='3')]
+         DNA('ACGTACGTTAATACCCTGGTAGT', identifier='1'),\
+         DNA('ACGTACGTTAATACCCTGGTAGT', identifier='2'),\
+         DNA('AA', identifier='3')]
         
         actual = pynast_seqs(candidate_seqs,db_aln2,min_len=5000,min_pct=75.0)
         
         self.assertEqual(actual,(expected_aln,expected_fail))
     
-    def test_pynast_seqs_simple_alt_pairwise(self):
-        """pynast_seqs: fns with alt pairwise aligner
-        """
-        # tests that the order of the returned sequences is correct
-        # as this is easy to screw up
-        candidate_seqs = [('1','AGCCCCTTTT')]
-        template_aln = LoadSeqs(data=dict([
-            ('2','ACCC-----CCTTTT')]),\
-            moltype=DNA,aligned=DenseAlignment)
-        expected_aln = [DNA.makeSequence('AGCC-----CCTTTT',Name='1')]
-        expected_fail = []
-        
-        actual = pynast_seqs(candidate_seqs,template_aln,
-                     min_len=5,min_pct=75.0,\
-                     align_unaligned_seqs_f=pair_hmm_align_unaligned_seqs)
-        self.assertEqual(actual,(expected_aln,expected_fail))
-        
-        
-        # tests that the aligner was actually applied, as it's
-        # nearly impossible to get different alignments with
-        # different aligners on these short test sequences --
-        # therefore test with a fake aligner that alters the sequence
-        def fake_aligner(seqs,moltype,params={}):
-            return LoadSeqs(data=[('candidate','AGGGGGTTTT'),
-                                   ('template', 'ACCCCCTTTT')],moltype=DNA)
-
-        candidate_seqs = [('1','ACCCCCTTTT')]
-        template_aln = LoadSeqs(data=dict([
-             ('2','ACCC-----CCTTTT')]),\
-             moltype=DNA,aligned=DenseAlignment)
-        expected_aln = [DNA.makeSequence('AGGG-----GGTTTT',Name='1')]
-        expected_fail = []
-        actual = pynast_seqs(candidate_seqs,template_aln,
-                              min_len=5,min_pct=75.0,\
-                              align_unaligned_seqs_f=fake_aligner)
-        self.assertEqual(actual,(expected_aln,expected_fail))
-
-       
     def test_ipynast_seqs_simple(self):
         """ipynast_seqs: fns with simple test data
         """
@@ -343,11 +294,11 @@ class PyNastTests(TestCase):
          ('3','AA')]
          
         expected = [\
-         (DNA.makeSequence(\
-          'ACGAACGT-TA--ATA-C-----CC-T-G-GAA-G-T---',Name='1'),0),\
-         (DNA.makeSequence(\
-          'ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',Name='2'),0),\
-         (DNA.makeSequence('AA',Name='3'),1)]
+         (DNA(\
+          'ACGAACGT-TA--ATA-C-----CC-T-G-GAA-G-T---', identifier='1'),0),\
+         (DNA(\
+          'ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---', identifier='2'),0),\
+         (DNA('AA', identifier='3'),1)]
         
         actual = list(ipynast_seqs(\
          candidate_seqs,db_aln2,min_len=5,min_pct=75.0))
@@ -356,9 +307,9 @@ class PyNastTests(TestCase):
          
         # all fail when min_len restricts matches
         expected = [\
-         (DNA.makeSequence('ACGAACGTTAATACCCTGGAAGT',Name='1'),2),\
-         (DNA.makeSequence('ACGTACGTTAATACCCTGGTAGT',Name='2'),2),\
-         (DNA.makeSequence('AA',Name='3'),1)]
+         (DNA('ACGAACGTTAATACCCTGGAAGT', identifier='1'),2),\
+         (DNA('ACGTACGTTAATACCCTGGTAGT', identifier='2'),2),\
+         (DNA('AA', identifier='3'),1)]
         
         actual = list(ipynast_seqs(\
          candidate_seqs,db_aln2,min_len=5000,min_pct=75.0))
@@ -418,9 +369,9 @@ class PyNastTests(TestCase):
          ('3','AA')]
          
         expected_aln = [\
-         DNA.makeSequence('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',Name='1'),\
-         DNA.makeSequence('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',Name='2')]
-        expected_fail = [DNA.makeSequence('AA',Name='3')]
+         DNA('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---', identifier='1'),\
+         DNA('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---', identifier='2')]
+        expected_fail = [DNA('AA', identifier='3')]
         
         class StatusTracker(object):
             completed_seqs_count = 0
@@ -438,7 +389,7 @@ class PyNastTests(TestCase):
         """pynast_seq: fns as exp with simple example
         """
         candidate_sequence =\
-         DNA.makeSequence('ACGTACGTTAATACCCTGGTAGT',Name='input')
+         DNA('ACGTACGTTAATACCCTGGTAGT', identifier='input')
         actual = pynast_seq(candidate_sequence,db_aln2,
          max_hits=30,min_pct=75.0,
          min_len=5,align_unaligned_seqs_f=None)
@@ -450,12 +401,12 @@ class PyNastTests(TestCase):
         
         self.assertEqual(actual[0],expected_template_hit)
         self.assertEqual(str(actual[1]),expected_aligned_seq)
-        self.assertEqual(actual[1].Name,expected_aligned_seq_id)
+        self.assertEqual(actual[1].identifier,expected_aligned_seq_id)
         
         # check full result object
         expected = ('5',\
-         DNA.makeSequence('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',\
-         Name='input 1..23')) 
+         DNA('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',\
+         identifier='input 1..23')) 
         self.assertEqual(actual,expected)
         
     def test_pynast_seq_simple_rc(self):
@@ -465,7 +416,7 @@ class PyNastTests(TestCase):
         # test_pynast_seq_simple -- this test checks that the 
         # same result is returned
         candidate_sequence =\
-         DNA.makeSequence('ACTACCAGGGTATTAACGTACGT',Name='input')
+         DNA('ACTACCAGGGTATTAACGTACGT', identifier='input')
         actual = pynast_seq(candidate_sequence,db_aln2,
          max_hits=30,min_pct=75.0,
          min_len=5,align_unaligned_seqs_f=None)
@@ -477,12 +428,12 @@ class PyNastTests(TestCase):
         
         self.assertEqual(actual[0],expected_template_hit)
         self.assertEqual(str(actual[1]),expected_aligned_seq)
-        self.assertEqual(actual[1].Name,expected_aligned_seq_id)
+        self.assertEqual(actual[1].identifier,expected_aligned_seq_id)
         
         # check full result object
         expected = ('5',\
-         DNA.makeSequence('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',\
-         Name='input RC:1..23')) 
+         DNA('ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---',\
+         identifier='input RC:1..23')) 
         self.assertEqual(actual,expected)        
     
     def test_pynast_seq_10116(self):
@@ -497,8 +448,7 @@ class PyNastTests(TestCase):
         
         """
         candidate_sequence =\
-         LoadSeqs(data=input_seq_10116.split('\n'),moltype=DNA).\
-         getSeq('10116')
+         Alignment.from_fasta_records(input_seq_10116.split('\n'),DNA).get_seq('10116')
         template_aln = self.full_length_test1_template_aln
         
         actual = pynast_seq(candidate_sequence,template_aln,\
@@ -512,13 +462,11 @@ class PyNastTests(TestCase):
         """pynast_seq: aligning handles input seq longer than best template seq
         """
         template_aln =\
-         LoadSeqs(data=template_14990_trimmed.split('\n'),\
-         moltype=DNA,aligned=DenseAlignment) 
+         Alignment(MinimalFastaParser(template_14990_trimmed.split('\n'))) 
         candidate_sequence =\
-         LoadSeqs(data=input_seq_14990.split('\n'),moltype=DNA).\
-         getSeq('14990')
+         SequenceCollection(MinimalFastaParser(input_seq_14990.split('\n'))).get_seq('14990')
         expected = ('14990_5_and_3_prime_lost_four_bases_each',\
-         template_aln.getGappedSeq('14990_5_and_3_prime_lost_four_bases_each'))
+         template_aln.get_seq('14990_5_and_3_prime_lost_four_bases_each'))
         
         actual = pynast_seq(candidate_sequence,template_aln,
          max_hits=30,min_pct=75.0,min_len=1000,
@@ -550,121 +498,15 @@ class PyNastTests(TestCase):
         """
         for seq_id, seq in MinimalFastaParser(self.input_seqs_gaps):
             # error when gap(s) in seq
-            cs = DNA.makeSequence(seq,Name=seq_id)
+            cs = DNA(seq, identifier=seq_id)
             self.assertRaises(ValueError,pynast_seq,cs,db_aln2,\
              max_hits=1,min_pct=75.0,min_len=5,align_unaligned_seqs_f=None)
              
             seq = seq.replace('-','').replace('.','')
             # no error when no gaps in seq
-            cs = DNA.makeSequence(seq,Name=seq_id)
+            cs = DNA(seq, identifier=seq_id)
             r = pynast_seq(cs,db_aln2,\
              max_hits=1,min_pct=70.0,min_len=5,align_unaligned_seqs_f=None)
-             
-        
-    def test_align_two_seqs_with_muscle(self):
-        """ align_two_seqs: fns for simple alignments with muscle
-        """
-        # Only a few trivial cases are tested as it is not the place to
-        # test how the aligners functions
-        f = muscle_align_unaligned_seqs
-
-        # perfect alignment
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
-    
-        # gap added to s2
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # gap added to s1
-        s1 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # single mismatch
-        s1 = DNA.makeSequence('ACGTACGTACATTCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
-    
-        # truncated sequence (3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCT------')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # truncated sequence (5')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
-    
-        # truncated sequence (5' and 3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGT---')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
-        
-    def test_align_two_seqs_with_pair_hmm(self):
-        """ align_two_seqs: fns for simple alignments with pair_hmm alignment
-        """
-        # Only a few trivial cases are tested as it is not the place to
-        # test how the aligners functions
-        f = pair_hmm_align_unaligned_seqs
-
-        # perfect alignment
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
-    
-        # gap added to s2
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # gap added to s1
-        s1 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # single mismatch
-        s1 = DNA.makeSequence('ACGTACGTACATTCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
-    
-        # truncated sequence (3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCT------')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # truncated sequence (5')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2)) 
-    
-        # truncated sequence (5' and 3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGT---')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
-        
         
     def test_align_two_seqs_with_blast(self):
         """ align_two_seqs: fns for simple alignments with blast (bl2seq)
@@ -674,203 +516,73 @@ class PyNastTests(TestCase):
         f = blast_align_unaligned_seqs
     
         # perfect alignment
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
+        s1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        s2 = DNA('ACGTACGTACATACCCTGGTAGT')
         self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
             
         # gap added to s2
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
+        s1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        s2 = DNA('ACGTACGTACATCCCTGGTAGT')
+        exp1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        exp2 = DNA('ACGTACGTACAT-CCCTGGTAGT')
         self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
             
         # gap added to s1
-        s1 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
+        s1 = DNA('ACGTACGTACATCCCTGGTAGT')
+        s2 = DNA('ACGTACGTACATACCCTGGTAGT')
+        exp1 = DNA('ACGTACGTACAT-CCCTGGTAGT')
+        exp2 = DNA('ACGTACGTACATACCCTGGTAGT')
         self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
             
         # single mismatch
-        s1 = DNA.makeSequence('ACGTACGTACATTCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
+        s1 = DNA('ACGTACGTACATTCCCTGGTAGT')
+        s2 = DNA('ACGTACGTACATACCCTGGTAGT')
         self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
     
         # truncated sequence (3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCT------')
+        s1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        s2 = DNA('ACGTACGTACATACCCT')
+        exp1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        exp2 = DNA('ACGTACGTACATACCCT------')
         self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
         # reversed order works as well (ie., extended sequence 3')
         self.assertEqual(align_two_seqs(s2,s1,f),(exp2,exp1))
     
         # truncated sequence (5')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGTAGT')
+        s1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        s2 = DNA('CGTACATACCCTGGTAGT')
+        exp1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        exp2 = DNA('-----CGTACATACCCTGGTAGT')
         self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
         # reversed order works as well (ie., extended sequence 5')
         self.assertEqual(align_two_seqs(s2,s1,f),(exp2,exp1))   
     
         # truncated sequence (5' and 3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGT---')
+        s1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        s2 = DNA('CGTACATACCCTGGT')
+        exp1 = DNA('ACGTACGTACATACCCTGGTAGT')
+        exp2 = DNA('-----CGTACATACCCTGGT---')
         self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
         # reversed order works as well (ie., extended sequence 5' and 3')
         self.assertEqual(align_two_seqs(s2,s1,f),(exp2,exp1)) 
         
         # staggered ends
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGT')
-        s2 = DNA.makeSequence(     'CGTACATACCCTGGTAGTTT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGT-----')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGTAGTTT')
+        s1 = DNA('ACGTACGTACATACCCTGGT')
+        s2 = DNA(     'CGTACATACCCTGGTAGTTT')
+        exp1 = DNA('ACGTACGTACATACCCTGGT-----')
+        exp2 = DNA('-----CGTACATACCCTGGTAGTTT')
         self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
         # reversed order works as well 
         self.assertEqual(align_two_seqs(s2,s1,f),(exp2,exp1))
         
-    def test_align_two_seqs_with_clustal(self):
-        """ align_two_seqs: fns for simple alignments with clustal
-        """
-        # Only a few trivial cases are tested as it is not the place to
-        # test how the aligners function
-        f = clustal_align_unaligned_seqs
-
-        # perfect alignment
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
-    
-        # gap added to s2
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # gap added to s1
-        s1 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # single mismatch
-        s1 = DNA.makeSequence('ACGTACGTACATTCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
-    
-        # truncated sequence (3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCT------')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # truncated sequence (5')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
-    
-        # truncated sequence (5' and 3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGT---')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-        
-    def test_align_two_seqs_with_mafft(self):
-        """ align_two_seqs: fns for simple alignments with mafft
-        """
-        # Only a few trivial cases are tested as it is not the place to
-        # test how the aligners functions
-        f = mafft_align_unaligned_seqs
-
-        # perfect alignment
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
-    
-        # gap added to s2
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # gap added to s1
-        s1 = DNA.makeSequence('ACGTACGTACATCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACAT-CCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # single mismatch
-        s1 = DNA.makeSequence('ACGTACGTACATTCCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(s1,s2))
-    
-        # truncated sequence (3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('ACGTACGTACATACCC------T')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))
-    
-        # truncated sequence (5')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTGGTAGT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
-    
-        # truncated sequence (5' and 3')
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('CGTACATACCCTGGT')
-        exp1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp2 = DNA.makeSequence('-----CGTACATACCCTG---GT')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
-  
-    def test_align_two_seqs_with_fake_aligner(self):
-        """ align_two_seqs: fns for simple alignments with fake_aligner
-        """
-        # Test a fake aligner function which uses the params dict
-        def f(seqs,moltype,params={}):
-            try:
-                res = params['res']
-            except KeyError:
-                res = 'AAAAAAAAAA'
-            seqs = [('template',str(res)), ('candidate',str(res))]
-            seqs = LoadSeqs(data=seqs,moltype=moltype,aligned=DenseAlignment)
-            return seqs
-
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('AAAAAAAAAA')
-        exp2 = DNA.makeSequence('AAAAAAAAAA')
-        self.assertEqual(align_two_seqs(s1,s2,f),(exp1,exp2))   
-
-        s1 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        s2 = DNA.makeSequence('ACGTACGTACATACCCTGGTAGT')
-        exp1 = DNA.makeSequence('BBB')
-        exp2 = DNA.makeSequence('BBB')
-        self.assertEqual(align_two_seqs(s1,s2,f,params={'res':'BBB'}),\
-         (exp1,exp2))
-
     def test_reintroduce_template_spacing_template(self):
         """ reintroduce_template_spacing: template example from DeSantis2004
         """
-        template = DNA.makeSequence('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
-        pw_aligned_template = DNA.makeSequence('ATACGT-A-ACGTACGTAC--GG')
-        pw_aligned_candidate= DNA.makeSequence('C-ACGTTAAACGT-CGTACCCGG')
+        template = DNA('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
+        pw_aligned_template = DNA('ATACGT-A-ACGTACGTAC--GG')
+        pw_aligned_candidate= DNA('C-ACGTTAAACGT-CGTACCCGG')
         template_expected = \
-         DNA.makeSequence('ATAC-----GT-A-AC----GTA---C---G-T-AC--GG')
+         DNA('ATAC-----GT-A-AC----GTA---C---G-T-AC--GG')
         
         actual = reintroduce_template_spacing(\
          template,pw_aligned_template,pw_aligned_candidate)
@@ -879,11 +591,11 @@ class PyNastTests(TestCase):
     def test_reintroduce_template_spacing_candidate(self):
         """ reintroduce_template_spacing: candidate example from DeSantis2006
         """
-        template = DNA.makeSequence('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
-        pw_aligned_template = DNA.makeSequence('ATACGT-A-ACGTACGTAC--GG')
-        pw_aligned_candidate= DNA.makeSequence('C-ACGTTAAACGT-CGTACCCGG')
+        template = DNA('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
+        pw_aligned_template = DNA('ATACGT-A-ACGTACGTAC--GG')
+        pw_aligned_candidate= DNA('C-ACGTTAAACGT-CGTACCCGG')
         candidate_expected = \
-         DNA.makeSequence('C-AC-----GTTAAAC----GT----C---G-T-ACCCGG')
+         DNA('C-AC-----GTTAAAC----GT----C---G-T-ACCCGG')
         
         actual = reintroduce_template_spacing(\
          template,pw_aligned_template,pw_aligned_candidate)
@@ -892,9 +604,9 @@ class PyNastTests(TestCase):
     def test_reintroduce_template_spacing_new_gaps(self):
         """ reintroduce_template_spacing: new gaps example from DeSantis2006
         """
-        template = DNA.makeSequence('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
-        pw_aligned_template = DNA.makeSequence('ATACGT-A-ACGTACGTAC--GG')
-        pw_aligned_candidate= DNA.makeSequence('C-ACGTTAAACGT-CGTACCCGG')
+        template = DNA('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
+        pw_aligned_template = DNA('ATACGT-A-ACGTACGTAC--GG')
+        pw_aligned_candidate= DNA('C-ACGTTAAACGT-CGTACCCGG')
         new_gaps_expected = [11,36]
         
         actual = reintroduce_template_spacing(\
@@ -904,13 +616,13 @@ class PyNastTests(TestCase):
     def test_reintroduce_template_spacing(self):
         """ reintroduce_template_spacing: example from DeSantis2006
         """
-        template = DNA.makeSequence('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
-        pw_aligned_template = DNA.makeSequence('ATACGT-A-ACGTACGTAC--GG')
-        pw_aligned_candidate= DNA.makeSequence('C-ACGTTAAACGT-CGTACCCGG')
+        template = DNA('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
+        pw_aligned_template = DNA('ATACGT-A-ACGTACGTAC--GG')
+        pw_aligned_candidate= DNA('C-ACGTTAAACGT-CGTACCCGG')
         template_expected = \
-         DNA.makeSequence('ATAC-----GT-A-AC----GTA---C---G-T-AC--GG')
+         DNA('ATAC-----GT-A-AC----GTA---C---G-T-AC--GG')
         candidate_expected = \
-         DNA.makeSequence('C-AC-----GTTAAAC----GT----C---G-T-ACCCGG')
+         DNA('C-AC-----GTTAAAC----GT----C---G-T-ACCCGG')
         new_gaps_expected = [11,36]
         
         actual = reintroduce_template_spacing(\
@@ -921,17 +633,17 @@ class PyNastTests(TestCase):
     def test_reintroduce_template_spacing_no_change(self):
         """ reintroduce_template_spacing: no changes
         """
-        template = DNA.makeSequence('AT-CG')
+        template = DNA('AT-CG')
         actual = reintroduce_template_spacing(\
          template,template,template)
         self.assertEqual(actual,(template,template,[]))        
         
         # different seqs but pw alignment matches template pattern
-        template = DNA.makeSequence('ATC-G')
-        pw_aligned_template = DNA.makeSequence ('ATC-G')
-        pw_aligned_candidate = DNA.makeSequence('ATCCG')
-        template_expected = DNA.makeSequence ('ATC-G')
-        candidate_expected = DNA.makeSequence('ATCCG')
+        template = DNA('ATC-G')
+        pw_aligned_template = DNA ('ATC-G')
+        pw_aligned_candidate = DNA('ATCCG')
+        template_expected = DNA ('ATC-G')
+        candidate_expected = DNA('ATCCG')
         
         actual = reintroduce_template_spacing(\
          template,pw_aligned_template,pw_aligned_candidate)
@@ -940,11 +652,11 @@ class PyNastTests(TestCase):
     def test_reintroduce_template_spacing_middle(self):
         """ reintroduce_template_spacing: change to non-terminal character
         """
-        template = DNA.makeSequence('GTA---C')
-        pw_aligned_template = DNA.makeSequence( 'GTAC')
-        pw_aligned_candidate = DNA.makeSequence('GT-C')
-        template_expected = DNA.makeSequence( 'GTA---C')
-        candidate_expected = DNA.makeSequence('GT----C')
+        template = DNA('GTA---C')
+        pw_aligned_template = DNA( 'GTAC')
+        pw_aligned_candidate = DNA('GT-C')
+        template_expected = DNA( 'GTA---C')
+        candidate_expected = DNA('GT----C')
         new_gaps_expected = []
         
         actual = reintroduce_template_spacing(\
@@ -952,11 +664,11 @@ class PyNastTests(TestCase):
         self.assertEqual(actual,\
          (template_expected,candidate_expected,new_gaps_expected))
         
-        template = DNA.makeSequence('ATAC-----GTA-AC')
-        pw_aligned_template = DNA.makeSequence( 'ATACGT-A-AC')
-        pw_aligned_candidate = DNA.makeSequence('C-ACGTTAAAC')
-        template_expected = DNA.makeSequence( 'ATAC-----GT-A-AC')
-        candidate_expected = DNA.makeSequence('C-AC-----GTTAAAC')
+        template = DNA('ATAC-----GTA-AC')
+        pw_aligned_template = DNA( 'ATACGT-A-AC')
+        pw_aligned_candidate = DNA('C-ACGTTAAAC')
+        template_expected = DNA( 'ATAC-----GT-A-AC')
+        candidate_expected = DNA('C-AC-----GTTAAAC')
         new_gaps_expected = [11]
         
         actual = reintroduce_template_spacing(\
@@ -965,11 +677,11 @@ class PyNastTests(TestCase):
          (template_expected,candidate_expected,new_gaps_expected)) 
         
         # single gap in new spot
-        template = DNA.makeSequence('GTA-AC')
-        pw_aligned_template = DNA.makeSequence( 'GT-A-AC')
-        pw_aligned_candidate = DNA.makeSequence('GTTAAAC')
-        template_expected = DNA.makeSequence( 'GT-A-AC')
-        candidate_expected = DNA.makeSequence('GTTAAAC')
+        template = DNA('GTA-AC')
+        pw_aligned_template = DNA( 'GT-A-AC')
+        pw_aligned_candidate = DNA('GTTAAAC')
+        template_expected = DNA( 'GT-A-AC')
+        candidate_expected = DNA('GTTAAAC')
         new_gaps_expected = [2]
         
         actual = reintroduce_template_spacing(\
@@ -978,11 +690,11 @@ class PyNastTests(TestCase):
          (template_expected,candidate_expected,new_gaps_expected))   
         
         # existing gap extended
-        template = DNA.makeSequence('AC-GG')
-        pw_aligned_template = DNA.makeSequence( 'AC--GG')
-        pw_aligned_candidate = DNA.makeSequence('ACCCGG')
-        template_expected = DNA.makeSequence( 'AC--GG')
-        candidate_expected = DNA.makeSequence('ACCCGG')
+        template = DNA('AC-GG')
+        pw_aligned_template = DNA( 'AC--GG')
+        pw_aligned_candidate = DNA('ACCCGG')
+        template_expected = DNA( 'AC--GG')
+        candidate_expected = DNA('ACCCGG')
         new_gaps_expected = [2]
         
         actual = reintroduce_template_spacing(\
@@ -994,11 +706,11 @@ class PyNastTests(TestCase):
         """ reintroduce_template_spacing: lead/trailing template gaps ignored
         """       
         # leading gaps
-        template = DNA.makeSequence('----AC-GG')
-        pw_aligned_template = DNA.makeSequence( 'AC--GG')
-        pw_aligned_candidate = DNA.makeSequence('ACCCGG')
-        template_expected = DNA.makeSequence( 'AC--GG')
-        candidate_expected = DNA.makeSequence('ACCCGG')
+        template = DNA('----AC-GG')
+        pw_aligned_template = DNA( 'AC--GG')
+        pw_aligned_candidate = DNA('ACCCGG')
+        template_expected = DNA( 'AC--GG')
+        candidate_expected = DNA('ACCCGG')
         new_gaps_expected = [2]
         
         actual = reintroduce_template_spacing(\
@@ -1007,11 +719,11 @@ class PyNastTests(TestCase):
          (template_expected,candidate_expected,new_gaps_expected))    
          
         # trailing gaps
-        template = DNA.makeSequence('AC-GG---')
-        pw_aligned_template = DNA.makeSequence( 'AC--GG')
-        pw_aligned_candidate = DNA.makeSequence('ACCCGG')
-        template_expected = DNA.makeSequence( 'AC--GG')
-        candidate_expected = DNA.makeSequence('ACCCGG')
+        template = DNA('AC-GG---')
+        pw_aligned_template = DNA( 'AC--GG')
+        pw_aligned_candidate = DNA('ACCCGG')
+        template_expected = DNA( 'AC--GG')
+        candidate_expected = DNA('ACCCGG')
         new_gaps_expected = [2]
         
         actual = reintroduce_template_spacing(\
@@ -1020,11 +732,11 @@ class PyNastTests(TestCase):
          (template_expected,candidate_expected,new_gaps_expected))   
            
         # leading/trailing gaps
-        template = DNA.makeSequence('-AC-GG---')
-        pw_aligned_template = DNA.makeSequence( 'AC--GG')
-        pw_aligned_candidate = DNA.makeSequence('ACCCGG')
-        template_expected = DNA.makeSequence( 'AC--GG')
-        candidate_expected = DNA.makeSequence('ACCCGG')
+        template = DNA('-AC-GG---')
+        pw_aligned_template = DNA( 'AC--GG')
+        pw_aligned_candidate = DNA('ACCCGG')
+        template_expected = DNA( 'AC--GG')
+        candidate_expected = DNA('ACCCGG')
         new_gaps_expected = [2]
         
         actual = reintroduce_template_spacing(\
@@ -1036,17 +748,17 @@ class PyNastTests(TestCase):
         """ adjust_alignment: example from DeSantis2006
         """
         template = \
-          DNA.makeSequence('ATAC-----GT-A-AC----GTA---C---G-T-AC--GG')
+          DNA('ATAC-----GT-A-AC----GTA---C---G-T-AC--GG')
         candidate = \
-          DNA.makeSequence('C-AC-----GTTAAAC----GT----C---G-T-ACCCGG')
+          DNA('C-AC-----GTTAAAC----GT----C---G-T-ACCCGG')
         new_gaps = [11,36]
         # IS THERE A TYPO IN THEIR EXAMPLE? THEY CHANGE GT-A-AC TO 
         # GT-AAC, BUT THAT DOESN'T REALLY MAKE SENSE GIVEN THAT THE
         # TEMPLATE ALIGNMENT IS GTA-AC...
         template_expected = \
-         DNA.makeSequence('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
+         DNA('ATAC-----GTA-AC----GTA---C---G-T-AC-GG')
         candidate_expected = \
-         DNA.makeSequence('C-AC----GTTAAAC----GT----C---G-TACCCGG')
+         DNA('C-AC----GTTAAAC----GT----C---G-TACCCGG')
       
         actual = adjust_alignment(template,candidate,new_gaps)
         self.assertEqual(actual,(template_expected,candidate_expected))
@@ -1055,29 +767,29 @@ class PyNastTests(TestCase):
         """ adjust_alignmnet: simple adjustments handled as expected
         """
         # remove a 3' gap
-        t = DNA.makeSequence('AA-GGC---ATTAA')
-        c = DNA.makeSequence('AATCCTT--AAAAA')
+        t = DNA('AA-GGC---ATTAA')
+        c = DNA('AATCCTT--AAAAA')
         new_gaps = [2]
-        t_expected = DNA.makeSequence('AAGGC---ATTAA')
-        c_expected = DNA.makeSequence('AATCCTT-AAAAA')
+        t_expected = DNA('AAGGC---ATTAA')
+        c_expected = DNA('AATCCTT-AAAAA')
         self.assertEqual(adjust_alignment(t,c,new_gaps),\
          (t_expected,c_expected))
          
         # remove a 5' gap
-        t = DNA.makeSequence('AA-GGC----TTAA')
-        c = DNA.makeSequence('AATCCTT--AAAAA')
+        t = DNA('AA-GGC----TTAA')
+        c = DNA('AATCCTT--AAAAA')
         new_gaps = [9]
-        t_expected = DNA.makeSequence('AA-GGC---TTAA')
-        c_expected = DNA.makeSequence('AATCCTT-AAAAA')
+        t_expected = DNA('AA-GGC---TTAA')
+        c_expected = DNA('AATCCTT-AAAAA')
         self.assertEqual(adjust_alignment(t,c,new_gaps),\
          (t_expected,c_expected))
          
          # multiple gaps to remove
-        t = DNA.makeSequence('AA-GGC----TTAA')
-        c = DNA.makeSequence('AATCCTT--AAAAA')
+        t = DNA('AA-GGC----TTAA')
+        c = DNA('AATCCTT--AAAAA')
         new_gaps = [2,9]
-        t_expected = DNA.makeSequence('AAGGC---TTAA')
-        c_expected = DNA.makeSequence('AATCCTTAAAAA')
+        t_expected = DNA('AAGGC---TTAA')
+        c_expected = DNA('AATCCTTAAAAA')
         self.assertEqual(adjust_alignment(t,c,new_gaps),\
          (t_expected,c_expected))
         
@@ -1085,33 +797,33 @@ class PyNastTests(TestCase):
     def test_adjust_alignment_multiple_adjancent_new_gaps(self):
         """ adjust_alignmnet: multiple adjacent new gaps handled as expected
         """
-        t = DNA.makeSequence('AA--GC---ATTAA')
-        c = DNA.makeSequence('AATCCTT--AAAAA')
+        t = DNA('AA--GC---ATTAA')
+        c = DNA('AATCCTT--AAAAA')
         new_gaps = [2,3]
-        t_expected = DNA.makeSequence('AAGC---ATTAA')
-        c_expected = DNA.makeSequence('AATCCTTAAAAA')
+        t_expected = DNA('AAGC---ATTAA')
+        c_expected = DNA('AATCCTTAAAAA')
         actual = adjust_alignment(t,c,new_gaps)
         # print ''
         # print actual[0]
         # print t_expected
         self.assertEqual(actual,(t_expected,c_expected))
         
-        t = DNA.makeSequence('AATTGCG---CAT')
-        c = DNA.makeSequence('AA---CTTTTAAA')
+        t = DNA('AATTGCG---CAT')
+        c = DNA('AA---CTTTTAAA')
         new_gaps = [7,8,9]
-        t_expected = DNA.makeSequence('AATTGCGCAT')
-        c_expected = DNA.makeSequence('AACTTTTAAA')
+        t_expected = DNA('AATTGCGCAT')
+        c_expected = DNA('AACTTTTAAA')
         actual = adjust_alignment(t,c,new_gaps)
         # print ''
         # print actual[0]
         # print t_expected
         self.assertEqual(actual,(t_expected,c_expected))
         
-        t = DNA.makeSequence('AATTGCG---CAT')
-        c = DNA.makeSequence('AA-CTTTTTA-A-')
+        t = DNA('AATTGCG---CAT')
+        c = DNA('AA-CTTTTTA-A-')
         new_gaps = [7,8,9]
-        t_expected = DNA.makeSequence('AATTGCGCAT')
-        c_expected = DNA.makeSequence('AACTTTTTAA')
+        t_expected = DNA('AATTGCGCAT')
+        c_expected = DNA('AACTTTTTAA')
         actual = adjust_alignment(t,c,new_gaps)
         # print ''
         # print actual[0]
@@ -1181,55 +893,55 @@ class PyNastTests(TestCase):
         """introduce_terminal_gaps: functions as expected
         """
         # no terminal gaps
-        template = DNA.makeSequence('AAA',Name='t')
-        aligned_candidate = DNA.makeSequence('AAA',Name='ac')
-        aligned_template = DNA.makeSequence('AAA',Name='at')
+        template = DNA('AAA', identifier='t')
+        aligned_candidate = DNA('AAA', identifier='ac')
+        aligned_template = DNA('AAA', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('AAA',Name='ac')
+        expected = DNA('AAA', identifier='ac')
         self.assertEqual(actual,expected)
         
         # 5' terminal gaps only
-        template = DNA.makeSequence('-AAA',Name='t')
-        aligned_candidate = DNA.makeSequence('AAA',Name='ac')
-        aligned_template = DNA.makeSequence('AAA',Name='at')
+        template = DNA('-AAA', identifier='t')
+        aligned_candidate = DNA('AAA', identifier='ac')
+        aligned_template = DNA('AAA', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('-AAA',Name='ac')
+        expected = DNA('-AAA', identifier='ac')
         self.assertEqual(actual,expected)
         
-        template = DNA.makeSequence('-----AAA',Name='t')
-        aligned_candidate = DNA.makeSequence('AAA',Name='ac')
-        aligned_template = DNA.makeSequence('AAA',Name='at')
+        template = DNA('-----AAA', identifier='t')
+        aligned_candidate = DNA('AAA', identifier='ac')
+        aligned_template = DNA('AAA', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('-----AAA',Name='ac')
+        expected = DNA('-----AAA', identifier='ac')
         self.assertEqual(actual,expected)
         
         # 3' terminal gaps only
-        template = DNA.makeSequence('ACG--',Name='t')
-        aligned_candidate = DNA.makeSequence('ACG',Name='ac')
-        aligned_template = DNA.makeSequence('AAA',Name='at')
+        template = DNA('ACG--', identifier='t')
+        aligned_candidate = DNA('ACG', identifier='ac')
+        aligned_template = DNA('AAA', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('ACG--',Name='ac')
+        expected = DNA('ACG--', identifier='ac')
         self.assertEqual(actual,expected)
         
-        template = DNA.makeSequence('ACCTG----',Name='t')
-        aligned_candidate = DNA.makeSequence('ACGGG',Name='ac')
-        aligned_template = DNA.makeSequence('ACCTG',Name='at')
+        template = DNA('ACCTG----', identifier='t')
+        aligned_candidate = DNA('ACGGG', identifier='ac')
+        aligned_template = DNA('ACCTG', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('ACGGG----',Name='ac')
+        expected = DNA('ACGGG----', identifier='ac')
         self.assertEqual(actual,expected)
         
         # 5' and 3' terminal gaps
-        template = DNA.makeSequence('---AC--CTG----',Name='t')
-        aligned_candidate = DNA.makeSequence('ACTTGGG',Name='ac')
-        aligned_template = DNA.makeSequence( 'AC--CTG',Name='at')
+        template = DNA('---AC--CTG----', identifier='t')
+        aligned_candidate = DNA('ACTTGGG', identifier='ac')
+        aligned_template = DNA( 'AC--CTG', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('---ACTTGGG----',Name='ac')
+        expected = DNA('---ACTTGGG----', identifier='ac')
         self.assertEqual(actual,expected)
         
     def test_introduce_terminal_gaps_existing_terminal_template_gaps(self):
@@ -1237,139 +949,139 @@ class PyNastTests(TestCase):
         """
         
         # one 5' gap in aligned_template
-        template = DNA.makeSequence('---AAA',Name='t')
-        aligned_candidate = DNA.makeSequence('AAAA',Name='ac')
-        aligned_template = DNA.makeSequence('-AAA',Name='at')
+        template = DNA('---AAA', identifier='t')
+        aligned_candidate = DNA('AAAA', identifier='ac')
+        aligned_template = DNA('-AAA', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('--AAAA',Name='ac')
+        expected = DNA('--AAAA', identifier='ac')
         self.assertEqual(actual,expected)
         
         # multiple 5' gaps in aligned_template
-        template = DNA.makeSequence('---AAA',Name='t')
-        aligned_candidate = DNA.makeSequence('AAAAAA',Name='ac')
-        aligned_template = DNA.makeSequence( '---AAA',Name='at')
+        template = DNA('---AAA', identifier='t')
+        aligned_candidate = DNA('AAAAAA', identifier='ac')
+        aligned_template = DNA( '---AAA', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('AAAAAA',Name='ac')
+        expected = DNA('AAAAAA', identifier='ac')
         self.assertEqual(actual,expected)
         
         # one 3' gap in aligned_template
-        template = DNA.makeSequence('AAA---',Name='t')
-        aligned_candidate = DNA.makeSequence('AAAA',Name='ac')
-        aligned_template = DNA.makeSequence( 'AAA-',Name='at')
+        template = DNA('AAA---', identifier='t')
+        aligned_candidate = DNA('AAAA', identifier='ac')
+        aligned_template = DNA( 'AAA-', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('AAAA--',Name='ac')
+        expected = DNA('AAAA--', identifier='ac')
         self.assertEqual(actual,expected)
         
         # multiple 3' gaps in aligned_template
-        template = DNA.makeSequence('AAA---',Name='t')
-        aligned_candidate = DNA.makeSequence('AAAAAA',Name='ac')
-        aligned_template = DNA.makeSequence( 'AAA---',Name='at')
+        template = DNA('AAA---', identifier='t')
+        aligned_candidate = DNA('AAAAAA', identifier='ac')
+        aligned_template = DNA( 'AAA---', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('AAAAAA',Name='ac')
+        expected = DNA('AAAAAA', identifier='ac')
         self.assertEqual(actual,expected)
         
         # 5 prime, 3 prime gaps in aligned_template
-        template = DNA.makeSequence('--CAA---',Name='t')
-        aligned_candidate = DNA.makeSequence('GCAAT',Name='ac')
-        aligned_template = DNA.makeSequence( '-CAA-',Name='at')
+        template = DNA('--CAA---', identifier='t')
+        aligned_candidate = DNA('GCAAT', identifier='ac')
+        aligned_template = DNA( '-CAA-', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('-GCAAT--',Name='ac')
+        expected = DNA('-GCAAT--', identifier='ac')
         self.assertEqual(actual,expected)
         
         # internal, 5', 3' gaps
-        template = DNA.makeSequence('--CATA---',Name='t')
-        aligned_candidate = DNA.makeSequence('GCA-AT',Name='ac')
-        aligned_template = DNA.makeSequence( '-CATA-',Name='at')
+        template = DNA('--CATA---', identifier='t')
+        aligned_candidate = DNA('GCA-AT', identifier='ac')
+        aligned_template = DNA( '-CATA-', identifier='at')
         actual = introduce_terminal_gaps(\
             template,aligned_template,aligned_candidate)
-        expected = DNA.makeSequence('-GCA-AT--',Name='ac')
+        expected = DNA('-GCA-AT--', identifier='ac')
         self.assertEqual(actual,expected)
         
     def test_remove_template_terminal_gaps(self):
         """ removing terminal gaps functions as expected """
         # no template terminal gaps
-        candidate = DNA.makeSequence('--CGTTGG-',Name='c')
-        template  = DNA.makeSequence('ACCGT-GGA',Name='t')
+        candidate = DNA('--CGTTGG-', identifier='c')
+        template  = DNA('ACCGT-GGA', identifier='t')
         actual = remove_template_terminal_gaps(candidate,template)
-        expected = (DNA.makeSequence('--CGTTGG-',Name='c 1..6'),template)
-        self.assertEqual(actual[0].Name,expected[0].Name)
-        self.assertEqual(actual[1].Name,expected[1].Name)
+        expected = (DNA('--CGTTGG-', identifier='c 1..6'),template)
+        self.assertEqual(actual[0].identifier,expected[0].identifier)
+        self.assertEqual(actual[1].identifier,expected[1].identifier)
         self.assertEqual(actual,expected)
         
-        candidate = DNA.makeSequence('',Name='c')
-        template  = DNA.makeSequence('',Name='t')
+        candidate = DNA('', identifier='c')
+        template  = DNA('', identifier='t')
         actual = remove_template_terminal_gaps(candidate,template)
         expected = (candidate,template)
-        self.assertEqual(actual[0].Name,expected[0].Name)
-        self.assertEqual(actual[1].Name,expected[1].Name)
+        self.assertEqual(actual[0].identifier,expected[0].identifier)
+        self.assertEqual(actual[1].identifier,expected[1].identifier)
         self.assertEqual(actual,expected)
         
         # 5' template terminal gaps
-        candidate = DNA.makeSequence('ACCGTTGGA',Name='c')
-        template  = DNA.makeSequence('--CGT-GGA',Name='t')
+        candidate = DNA('ACCGTTGGA', identifier='c')
+        template  = DNA('--CGT-GGA', identifier='t')
         actual = remove_template_terminal_gaps(candidate,template)
-        expected = (DNA.makeSequence('CGTTGGA',Name='c 3..9'),
-                    DNA.makeSequence('CGT-GGA',Name='t'))
-        self.assertEqual(actual[0].Name,expected[0].Name)
-        self.assertEqual(actual[1].Name,expected[1].Name)
+        expected = (DNA('CGTTGGA', identifier='c 3..9'),
+                    DNA('CGT-GGA', identifier='t'))
+        self.assertEqual(actual[0].identifier,expected[0].identifier)
+        self.assertEqual(actual[1].identifier,expected[1].identifier)
         self.assertEqual(actual,expected)
         
-        candidate = DNA.makeSequence('ACCGTTGGA',Name='c')
-        template  = DNA.makeSequence('-CCGT-GGA',Name='t')
+        candidate = DNA('ACCGTTGGA', identifier='c')
+        template  = DNA('-CCGT-GGA', identifier='t')
         actual = remove_template_terminal_gaps(candidate,template)
-        expected = (DNA.makeSequence('CCGTTGGA',Name='c 2..9'),
-                    DNA.makeSequence('CCGT-GGA',Name='t'))
-        self.assertEqual(actual[0].Name,expected[0].Name)
-        self.assertEqual(actual[1].Name,expected[1].Name)
+        expected = (DNA('CCGTTGGA', identifier='c 2..9'),
+                    DNA('CCGT-GGA', identifier='t'))
+        self.assertEqual(actual[0].identifier,expected[0].identifier)
+        self.assertEqual(actual[1].identifier,expected[1].identifier)
         self.assertEqual(actual,expected)
         
         # 3' template terminal gaps
-        candidate = DNA.makeSequence('ACCGTTGGA',Name='c')
-        template  = DNA.makeSequence('ACCGT-GG-',Name='t')
+        candidate = DNA('ACCGTTGGA', identifier='c')
+        template  = DNA('ACCGT-GG-', identifier='t')
         actual = remove_template_terminal_gaps(candidate,template)
-        expected = (DNA.makeSequence('ACCGTTGG',Name='c 1..8'),
-                    DNA.makeSequence('ACCGT-GG',Name='t'))
-        self.assertEqual(actual[0].Name,expected[0].Name)
-        self.assertEqual(actual[1].Name,expected[1].Name)
+        expected = (DNA('ACCGTTGG', identifier='c 1..8'),
+                    DNA('ACCGT-GG', identifier='t'))
+        self.assertEqual(actual[0].identifier,expected[0].identifier)
+        self.assertEqual(actual[1].identifier,expected[1].identifier)
         self.assertEqual(actual,expected)
         
-        candidate = DNA.makeSequence('ACCGTTGGA',Name='c')
-        template  = DNA.makeSequence('ACCGT-G--',Name='t')
+        candidate = DNA('ACCGTTGGA', identifier='c')
+        template  = DNA('ACCGT-G--', identifier='t')
         actual = remove_template_terminal_gaps(candidate,template)
-        expected = (DNA.makeSequence('ACCGTTG',Name='c 1..7'),
-                    DNA.makeSequence('ACCGT-G',Name='t'))
-        self.assertEqual(actual[0].Name,expected[0].Name)
-        self.assertEqual(actual[1].Name,expected[1].Name)
+        expected = (DNA('ACCGTTG', identifier='c 1..7'),
+                    DNA('ACCGT-G', identifier='t'))
+        self.assertEqual(actual[0].identifier,expected[0].identifier)
+        self.assertEqual(actual[1].identifier,expected[1].identifier)
         self.assertEqual(actual,expected)
         
         # 5' and 3' template terminal gaps
-        candidate = DNA.makeSequence('ACCGTTGGA',Name='c')
-        template  = DNA.makeSequence('--CGT-GG-',Name='t')
+        candidate = DNA('ACCGTTGGA', identifier='c')
+        template  = DNA('--CGT-GG-', identifier='t')
         actual = remove_template_terminal_gaps(candidate,template)
-        expected = (DNA.makeSequence('CGTTGG',Name='c 3..8'),
-                    DNA.makeSequence('CGT-GG',Name='t'))
-        self.assertEqual(actual[0].Name,expected[0].Name)
-        self.assertEqual(actual[1].Name,expected[1].Name)
+        expected = (DNA('CGTTGG', identifier='c 3..8'),
+                    DNA('CGT-GG', identifier='t'))
+        self.assertEqual(actual[0].identifier,expected[0].identifier)
+        self.assertEqual(actual[1].identifier,expected[1].identifier)
         self.assertEqual(actual,expected)
         
         # name constructed correctly when contains RC
-        candidate = DNA.makeSequence('ACCGTTGGA',Name='c RC')
-        template  = DNA.makeSequence('--CGT-GG-',Name='t')
+        candidate = DNA('ACCGTTGGA', identifier='c RC')
+        template  = DNA('--CGT-GG-', identifier='t')
         actual = remove_template_terminal_gaps(candidate,template)
-        expected = (DNA.makeSequence('CGTTGG',Name='c RC:3..8'),
-                    DNA.makeSequence('CGT-GG',Name='t'))
-        self.assertEqual(actual[0].Name,expected[0].Name)
-        self.assertEqual(actual[1].Name,expected[1].Name)
+        expected = (DNA('CGTTGG', identifier='c RC:3..8'),
+                    DNA('CGT-GG', identifier='t'))
+        self.assertEqual(actual[0].identifier,expected[0].identifier)
+        self.assertEqual(actual[1].identifier,expected[1].identifier)
         self.assertEqual(actual,expected)
         
         # ValueError on unaligned seqs
-        candidate = DNA.makeSequence('ACCGTTGGA',Name='c')
-        template  = DNA.makeSequence('-CGT-GG-',Name='ct')
+        candidate = DNA('ACCGTTGGA', identifier='c')
+        template  = DNA('-CGT-GG-', identifier='ct')
         self.assertRaises(ValueError,\
          remove_template_terminal_gaps,candidate,template)
 
@@ -1380,27 +1092,27 @@ class PyNastTests(TestCase):
               PyNAST 1.0. This tests that a good alignment is achieved
               with this seqeunce in later versions.
         """
-        template_alignment = LoadSeqs(data=template_128453.split('\n'))
+        template_alignment = Alignment.from_fasta_records(MinimalFastaParser(
+            template_128453.split('\n')),DNA)
         actual = pynast_seq(query_3037,template_alignment,min_len=150,
                             align_unaligned_seqs_f=None)
         expected = ('128453',aligned_3037)
         self.assertEqual(actual,expected)
         
         
-query_3037 = DNA.makeSequence("CTGGGCCGTGTCTCAGTCCCAGTGTGGCTGATCATCCTCTCAGACCAGCTAAGGATCGTCGCCTTGGTGCGCCTTTACCACACCAACTAGCTAAAGGCGATAAATCTTTGATCTCGCGATATCATCCGGTATTAGCAGCAATTTCTCGCTGTTATTCCGAACCTGAGGGCAGATTCCCACGCGTTACGCACCCGTGCGCCACTAAGGCCG",Name=">v15D30.1.08_100583")
+query_3037 = DNA("CTGGGCCGTGTCTCAGTCCCAGTGTGGCTGATCATCCTCTCAGACCAGCTAAGGATCGTCGCCTTGGTGCGCCTTTACCACACCAACTAGCTAAAGGCGATAAATCTTTGATCTCGCGATATCATCCGGTATTAGCAGCAATTTCTCGCTGTTATTCCGAACCTGAGGGCAGATTCCCACGCGTTACGCACCCGTGCGCCACTAAGGCCG", identifier=">v15D30.1.08_100583")
 
-aligned_3037 = DNA.makeSequence("----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------C-G----------------------------------------------------------------------------------GC-------------------------------CT--T--AG-T-GG-C-GC-A--C-------------GGG-TGCGT-A--AC-GC-G-T-G-GG---A-A--T-CT-G--C-C-CTC--AG-G------------------------------------------------------------------T-TC----GGA-AT-AA-CAG-------------------------C-G-A-----------------------GAA-A---TTG-CTG-CTAA-TA---CC-G--G-AT-G----------A--------------------T-------------------------------------AT-C-----------------------------------------------------------------------------------------------------------------------G-CG-A--------------------------------------------------------------------------------------------------------------------------------------G-A-T---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------CAAA--G-A----------------------------------------------------------------------------------------------------------------------------------------TTT-A----------------------------------------------------------------------------------------------------------------------------------T---C-G--------------C----C-T--------------------------------------------------TT--A--G-CT-A----G---TTGG-T-G-TG-G-T----AAA-GG-C-G-C-ACCA--A-GG-C-G--A-CG-A------------TCC-T-T------AG-CT-G-G-TCT-G-AG----A--GG-AT--G-AT-C-AG-CCAC-A-CTGGG--A-C-TG-A-GA-C-AC-G-G-CCCAG------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------",Name="v15D30.1.08_100583 1..210")
+aligned_3037 = DNA("----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------C-G----------------------------------------------------------------------------------GC-------------------------------CT--T--AG-T-GG-C-GC-A--C-------------GGG-TGCGT-A--AC-GC-G-T-G-GG---A-A--T-CT-G--C-C-CTC--AG-G------------------------------------------------------------------T-TC----GGA-AT-AA-CAG-------------------------C-G-A-----------------------GAA-A---TTG-CTG-CTAA-TA---CC-G--G-AT-G----------A--------------------T-------------------------------------AT-C-----------------------------------------------------------------------------------------------------------------------G-CG-A--------------------------------------------------------------------------------------------------------------------------------------G-A-T---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------CAAA--G-A----------------------------------------------------------------------------------------------------------------------------------------TTT-A----------------------------------------------------------------------------------------------------------------------------------T---C-G--------------C----C-T--------------------------------------------------TT--A--G-CT-A----G---TTGG-T-G-TG-G-T----AAA-GG-C-G-C-ACCA--A-GG-C-G--A-CG-A------------TCC-T-T------AG-CT-G-G-TCT-G-AG----A--GG-AT--G-AT-C-AG-CCAC-A-CTGGG--A-C-TG-A-GA-C-AC-G-G-CCCAG------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------", identifier="v15D30.1.08_100583 1..210")
 
 template_128453 = """>128453
 ------------------------------------------------------------------------------------------------------AACTTGAGAGTTT-GA--T-TC-T-G-GCTC-AG-AA-CGAA-C-GC--TGG-C--G-GC-A-TG--C----T-T--AACACA-T-GC-A-AGT-CGA-A-CGA---------A-G------------------------------------------GC----------------------------------------------------TTC-G----------------------------------------------------------------------------------GC-------------------------------CT--T--AG-T-GG-C-GC-A--C-------------GGG-TGCGT-A--AC-GC-G-T-G-GG---A-A--T-CT-G--C-C-TTC--AG-G------------------------------------------------------------------T-AC----GGA-AT-AA-CTA-------------------------G-G-G-----------------------GAA-A---CTC-GAG-CTAA-TA---CC-G--T-AT-G----------A--------------------T-------------------------------------AT-C-----------------------------------------------------------------------------------------------------------------------G-AG-A--------------------------------------------------------------------------------------------------------------------------------------G-A-T---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------CAAA--G-A----------------------------------------------------------------------------------------------------------------------------------------TTT-A----------------------------------------------------------------------------------------------------------------------------------T---C-G--------------C----C-T---G-AA-G---AT---G-A-----G-CCC-GCG--T-TGG--A------TT--A--G-CT-A----G---TTGG-T-A-GG-G-T----AAA-GG-C-T-T-ACCA--A-GG-C-G--A-CG-A------------TCC-A-T------AG-CT-G-G-TCT-G-AG----A--GG-AT--G-AT-C-AG-CCAC-A-CTGGG--A-C-TG-A-GA-C-AC-G-G-CCCAGA-CTCC-TAC-G--G-G-A-G-GC-A-GC-A-G-TG---GG-G-A-ATA-TTGGA-C-AA-T-GG--GG-GA-A----A-C-CC-T-GA-TC-CA-GCAA-TGCC-G-CG-T---G-A-G--T--GA-A-G--A--A-G-G-CC-----TT-AG---------G-G-T-T-G-T--A---AA-G-CTC--------TT-TT-A-C--C-CGG----GA-T--G---A-----------------------T--AA------------------------------T-GA-CA-GT-A-C-CG-G-GA-G---------AA-----------TAAGC-TCC-GG-C-TAA---C--T-CCGT--GCCA--G-C---A--GCCG---C-GG--TA-AT--AC---GG-AG-GGA-GCT-A-G-CG-TTGT-T-CGG-AA-TT-A--C-T--GGGC-GTA----AA-GCGT-AC--G-TA-G-G-C-G------------G--T-TT-A-A-T-AA----G-T-C-A---G-GGG-TG-A-AA-GC--CC-AGA-G--------------------------------------------------------------------CT-C-AA-------------------------------------------------------------------------CT-C-T-GG-AA-C----T-G-C-C-T-T--------T--GA-G-A-C-T-G-TTA--G-A-C---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------T-A-G-A-A-C-A-----T-AG--AA-G-A------------G-GT-A-AG-T----GG--AATT-CCG-A-GT--GT-A-GAG-GTGAAA-TT-CGT-AGAT-A-TT-C-GGA--AG-A-AC-A-CC-AG--T--G--GC-GAA-G--G-C---G----A--C-T-TACTG------G-TC-TA--------------------------------------------------------------TA-G-T-T--GA--CG-----CT-GA-GG--T-A-CGA--AA-G-C--------------G-TGGG-TAG-C-A-AACA--GG-ATTA-G-ATA-C-----CC-T-G-GTA-G-T----C-CA--C-G-CCG-T-AAA--C-GATG-AT--AA-CT---------A-GC--T--G-T-CC-G-GG-T--A--------------------------------------------------------------------------------------CAT-GG--------------------------------------------------------------------------------------------------------------------------------------------------T-A-T-CT--G-G-G-T-GG-C------GG--A----GC-TAA--CG-C-A-T--T--AA-GT--T----A-TCC-GCC-T-G-GG-GAG-TA---CGG-----T-C--G-C-A-A-GAT-T--AAA-ACTC-AAA---------GAAA-TTG-ACGGG-G-G-CCTG----C-A--C-A-A-GCG-GT-G--G--AG-CA-T--GT-GGT-TT-AATT-C-G-AAG-CAAC-G-CG-C-AG-A-A-CC-TT-A-CC-AGCGT-TT-G-AC-A-T-C-------------CTGA-T-C-------------G-CG-G-AAA--GT--G-GA-G-A-C--A-C-A-TT-C-T-T--T-C-----AG-------------------------------------T--TC-GG-----------------------------------------CT----G--------GA-TCA-G-A--GA---------------------------------------------------C-A-G-G-T-GCTG-CA-TGG-CT--GTC-GTC-A-GC-TC---G-TG-TC-G--TGA-GA-TGT-T-GG-G-TT-AA-GT-CCCGC-AA--------C-GAG-CGC-A-ACC-C-T-CA--CC--T-CTAG--T-T-G-C-C---AT-C-A--T----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------TAAG----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------T----T-G------------G----G---C-A--CT---------------T-T-A-G-A-GG-A--AC-T-G-CCG--G-T------------------------------------G-A---TAA----------------------------------G-C-C-G--G-A-GG-A--AGG-T--GGGG-A-TGAC-GTC--AAGT-C---CTC-A-T-G-G-C-C-CTT----AC-G--CG-C-T-GG-GC-TA-CAC-ACGTG-C--TA--CAATG---G-CGGT-G-A--C-AGA-GG-GC--------------------------------------------------------------------------------------------------C-G-C-A-A--G-CCTG-C--A---------------------------------------A-AG-G-T-----------T--A-G-CT---A----------A--TCT-C--------A-AAAAG-CC-G-T-C-T-CAG-TTC--------GGA-T-TGTTC-TC--T-GCAA-CT-C-------------------------------------------------------------------------------------------------G-AGAGC-A-T-G-AA-G-GC-GGAAT-CG-C-TA--G-TA-AT-C-G-C----GGA-TC-A-G-C-------AT--GCC-GC-G-GT-G-AAT-ACGT-T-CCCAGGCCT-TGTA----CACACCG-CCC-GTC-----A---CA--CCA-TG-GG-A--G---TTG-G-AT-TC-ACC--C-GAA------G--G-CGC-TG-C-G-C-T-AA-C-C-C-----------------------------------------------------------G-CA-A---------------------------------------------------------------------------------------------------G--GG-A--GG-C--A---GG-CGA--CC--ACG-G----T-GGG-TT-TAG------------------------CG--ACT-GGGG-TG-AAG-TCGTAACAA-GGTAG-CCGT-AGGGGAA-CCTG-CGGC-TGGATCACCTCCTTTCTAAGGA---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------"""
 
-db_aln2 = LoadSeqs(data=dict([
+db_aln2 = Alignment.from_fasta_records([
 ('1','ACGT--ACGTAC-ATA-C-----CC-T-G-GTA-G-T---'),
-('2','AGGTTTACGTAG-ATA-C-----CC-T-G-GTA-G-T---'),\
+('2','AGGTTTACGTAG-ATA-C-----CC-T-G-GTA-G-T---'),
 ('3','AGGTACT-CCAC-ATA-C-----CC-T-G-GTA-G-T---'),
 ('4','TCGTTCGT-----ATA-C-----CC-T-G-GTA-G-T---'),
-('5','ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---')]),\
-moltype=DNA,aligned=DenseAlignment)
+('5','ACGTACGT-TA--ATA-C-----CC-T-G-GTA-G-T---')],DNA)
 
 template_14990_trimmed = """>14990_5_and_3_prime_lost_four_bases_each
 --------------------------------------------------------------------------------------------------------------------------------------AG-GA-CGAA-C-GC--TGG-C--G-GC-G-TG--C----C-T--AATACA-T-GC-A-AGT-CGA-G-CGG---------A-A---ATTTTA--------------------------TTGG---TG----------------------------------------------------CTT-G----------------------------------------------------------------------------------CAC-CTT-------------------TAAAAT-TT--T--AG-C-GGCG-G--A--C-------------GGG-TGAGT-A--AC-AC-G-T-G-GG---TAA--C-CTAC--C-T--TA--TA-G------------------------------------------------------------------A-TT----GGG-AT-AA-CTC-------------------------C-G-G-----------------------GAA-A---CCG-GGG-CTAATAC---CG-A----AT-A---------------------------------A-TA-C-T--T--T----------------TTA---AC-------------------------------------------------------------------------------------------------------------------------A-CA-T--------------------------------------------------------------------------------------------------------------------------------------G-T-T--TGA---------------A--A---G-T-T-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------GAAA--G-A-C-GG-----T-----T-----------------------------------------------------------------------------------------------------------------------TCG--------------------------------------------------------------------------------------------------------------------------G--C--TG--T---C-A--------------C----T-A---T-AA-G---AT---G-G-----A-CCC-GCG--G-CGC--A------TT--A--G-CT-A----G---TTGG-T-G-AG-G-T----AAC-GG-C-T-C-ACCA--A-GG-C-A--A-CG-A------------TGC-G-T------AG-CC-G-A-CCT-G-AG----A--GG-GT--G-AT-C-GG-CCAC-A-CTGGG--A-C-TG-A-GA-C-AC-G-G-CCCAGA-CTCC-TAC-G--G-G-A-G-GC-A-GC-A-G-TA---GG-G-A-ATC-TTCCA-C-AA-T-GG--AC-GA-A----A-G-TC-T-GA-TG-GA-GCAA-CGCC-G-CG-T---G-A-G--T--GA-A-G--A--A-G-G-AT-----TT-CG---------G-T-T-C-G-T--A---AA-A-CTC--------TG-TT-G-C--A-AGG----GA-A--G---AACAAGT---AGCG-TA----G--T--AA-C---T----G-----G--C-GCT-ACC-TT-GA-CG-GT-A-C-CT-T-GT-T---------AG-----------AAAGC-CAC-GG-C-TAA---C--T-ACGT--GCCA--G-C---A--GCCG---C-GG--TA-AT--AC---GT-AG-GTG-GCA-A-G-CG-TTGT-C-CGG-AA-TT-A--T-T--GGGC-GTA----AA-GCGC-GC--G-CA-G-G-T-G------------G--T-TC-C-T-T-AA----G-T-C-T---G-ATG-TG-A-AA-GC--CC-CCG-G--------------------------------------------------------------------CT-C-AA-------------------------------------------------------------------------CC-G-G-GG-AG------G-GTC-A-T-T--------G--GA-A-A-C-T-G-GGG--A-A-C---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------T-T-G-A-G-T-G-----C-AG--AA-G-A------------G-GA-T-AG-T----GG--AATT-CCA-A-GT--GT-A-GCG-GTGAAA-TG-CGT-AGAG-A-TT-T-GGA--GG-A-AC-A-CC-AG--T--G--GC-GAA-G--G-C---G----A--C-T-GTCTG------G-TC-TG--------------------------------------------------------------TA-A-C-T--GA--CA-----CT-GA-GG--C-G-CGA--AA-G-C--------------G-TGGG-GAG-C-A-AACA--GG-ATTA-G-ATA-C-----CC-T-G-GTA-G-T----C-CA--C-G-CCG-T-AAA--C-GATG-AG--TG-CT---------A-AG--T--G-T-TG-G-GG-G--G--T------------------------------------------------------------------------------------TT-CC----------------------------------------------------------------------------------------------------------------------------------------------G---C-C-C-CT--C-A-G-T-GC-T------GC--A----GC-TAA--CG-C-A-T--T--AA-GC--A----C-TCC-GCC-T-G-GG-GAG-TA---CGG-----T-C--G-C-A-A-GAC-T--GAA-ACTC-AAA---------GGAA-TTG-ACGGG-G-G-CCCG----C-A--C-A-A-GCG-GT-G--G--AG-CA-T--GT-GGT-TT-AATT-C-G-AAG-CAAC-G-CG-A-AG-A-A-CC-TT-A-CC-AGGTC-TT-G-AC-A-TCC--------------CGG-T-G-------------A-CC-A-C-T--AT--G-GA-G-A-C--A-T-A--G-T-T-T--C-C-----CC-------------------------------------T--TC-G------------------------------------------GG----G----G--CAA-CGG---T--GA---------------------------------------------------C-A-G-G-T-GGTG-CA-TGG-TT--GTC-GTC-A-GC-TC---G-TG-TC-G--TGA-GA-TGT-T-GG-G-TT-AA-GT-CCCGC-AA--------C-GAG-CGC-A-ACC-C-T-TA--TT--C-TTAG--T-T-G-C-C---AT-C-A--T----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------TCAG----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------T----T-G------------G----G---C-A--CT---------------C-T-A-A-G-GA-G--AC-T-G-CCG--G-T------------------------------------G-A---TAA----------------------------------A-C-C-G--G-A-GG-A--AGG-T--GGGG-A-TGAC-GTC--AAAT-C---ATC-A-T-G-C-C-C-CTT----AT-G--AC-C-T-GG-GC-TA-CAC-ACGTG-C--TA--CAATG---G-ACGG-T-A--C-AAA-CG-GT--------------------------------------------------------------------------------------------------T-G-C-C-A--A-CCCG-C--G---------------------------------------A-GG-G-G-----------G--A-G-CT---A----------A--TCC-G------A-T-AAAAC-CG-T-T-C-T-CAG-TTC--------GGA-T-TGTAG-GC--T-GCAA-CT-C-------------------------------------------------------------------------------------------------G-CCTAC-A-T-G-AA-G-CC-GGAAT-CG-C-TA--G-TA-AT-C-G-C----GGA-TC-A-G-C-------AT--GCC-GC-G-GT-G-AAT-ACGT-T-CCCGGGCCT-TGTA----CACACCG-CCC-GTC-----A---CA--CCA-CG-AG-A--G---TTT-G-TA-AC-ACC--C-GAA------G--T-CGG-TG-A-G-G-T-AA-C-C-T-----------------------------------------------------------T-TA-----------------------------------------------------------------------------------------------------T--GG-A-C-C-C--A---CC-CGC--CG--AAG-G----T-GGG-AT-AAA------------------------TA--ATT-GGGG-TG-AAT-TCTTAACAA-GGTAC-CCGT-ATCGGAA-GGTG-CGGC-TGG------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------

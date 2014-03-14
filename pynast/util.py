@@ -15,18 +15,17 @@ from tempfile import gettempdir, NamedTemporaryFile
 from shutil import copy as copy_file
 from glob import glob
 
-from cogent import DNA, LoadSeqs, Sequence
 from cogent.util.misc import remove_files
-from cogent.core.alignment import SequenceCollection, DenseAlignment
+from cogent.core.alignment import DenseAlignment
 from cogent.align.align import make_dna_scoring_dict, global_pairwise
 from cogent.app.blast import blastn
 from cogent.app.formatdb import build_blast_db_from_seqs, \
  build_blast_db_from_fasta_path
-from cogent.app.muscle_v38 import align_unaligned_seqs as muscle_align_unaligned_seqs
-from cogent.app.mafft import align_unaligned_seqs as mafft_align_unaligned_seqs
-from cogent.app.clustalw import align_unaligned_seqs as clustal_align_unaligned_seqs
 from cogent.parse.blast import BlastResult
-from cogent.parse.fasta import MinimalFastaParser
+
+from bipy.core.sequence import DNA
+from bipy.core.alignment import SequenceCollection, Alignment
+from bipy.parse.fasta import MinimalFastaParser
 
 from pynast.logger import NastLogger
 from pynast.pycogent_backports.uclust import uclust_search_and_align_from_fasta_filepath
@@ -73,34 +72,6 @@ def get_pynast_temp_dir():
     """
     return gettempdir()
 
-def pair_hmm_align_unaligned_seqs(seqs,moltype,params={}):
-    """
-        This needs to be moved to cogent.align.align
-    """
-    
-    seqs = LoadSeqs(data=seqs,moltype=moltype,aligned=False)
-    try:
-        s1, s2 = seqs.values()
-    except ValueError:
-        raise ValueError,\
-         "Pairwise aligning of seqs requires exactly two seqs."
-    
-    try:
-        gap_open = params['gap_open']
-    except KeyError:
-        gap_open = 5
-    try:
-        gap_extend = params['gap_extend']
-    except KeyError:
-        gap_extend = 2
-    try:
-        score_matrix = params['score_matrix']
-    except KeyError:
-        score_matrix = make_dna_scoring_dict(\
-         match=1,transition=-1,transversion=-1)
-    
-    return global_pairwise(s1,s2,score_matrix,gap_open,gap_extend)
-
 def blast_align_unaligned_seqs(seqs,
                                moltype,
                                params={},
@@ -110,7 +81,7 @@ def blast_align_unaligned_seqs(seqs,
         This needs to be moved to the blast application controller.
     
     """
-    seqs = dict(LoadSeqs(data=seqs,moltype=moltype,aligned=False).items())
+    seqs = dict(SequenceCollection.from_fasta_records(seqs,DNA).items())
     seq_ids = seqs.keys()
     query_id = seq_ids[0]
     subject_id = seq_ids[1]
@@ -221,12 +192,12 @@ def blast_align_unaligned_seqs(seqs,
     result = [(query_id,query_seq),\
               (subject_id,subject_seq)]
     
-    return LoadSeqs(data=result,moltype=moltype)
+    return Alignment.from_fasta_records(result,DNA)
 
 
 def align_two_seqs(template, candidate,
-    align_unaligned_seqs_f=muscle_align_unaligned_seqs,
-    params={},moltype=DNA):
+    align_unaligned_seqs_f=blast_align_unaligned_seqs,
+    params={},moltype=None):
     """ Align the two sequences with an arbitrary aligner function
     
         template: the template sequence to align (string)
@@ -240,24 +211,24 @@ def align_two_seqs(template, candidate,
     # Load the sequences into a form useful to align_unaligned_seq_f
     seqs = [('template',str(template)), ('candidate',str(candidate))]
     # Align the sequences
-    aln = align_unaligned_seqs_f(seqs,moltype,params=params)
+    aln = align_unaligned_seqs_f(seqs,moltype=moltype,params=params)
     # Extract the sequences from the alignment object and return them
-    return aln.getGappedSeq('template'), aln.getGappedSeq('candidate')
+    return aln.get_seq('template'), aln.get_seq('candidate')
  
-def reintroduce_template_spacing(template,
-    pw_aligned_template,pw_aligned_candidate):
+def reintroduce_template_spacing(template, 
+        pw_aligned_template, pw_aligned_candidate):
     """ reintroduce template gap spacing into pairwise aligned sequences
     """
     # Check for the simple case where the alignment reproduced the
     # template spacing
     if template == pw_aligned_template:
-        return (pw_aligned_template, pw_aligned_candidate,[])   
+        return (pw_aligned_template, pw_aligned_candidate, [])   
     
     # get gap maps to help with relating the aligned template sequence
     # to the pairwise aligned template and candidate sequences
-    template_seq_to_aln = template.gapMaps()[0]
+    template_seq_to_aln = template.gap_maps()[0]
     pw_template_seq_to_aln, pw_template_aln_to_seq = \
-     pw_aligned_template.gapMaps()
+     pw_aligned_template.gap_maps()
      
     # build a list to keep track of gaps that were introduced in
     # the pairwise alignment but which were not present in the template
@@ -282,6 +253,7 @@ def reintroduce_template_spacing(template,
             # on to the next alignment position
             continue
         # store the next sequence position as it is used in several places
+        print seq_curr_pos
         seq_next_pos = seq_curr_pos + 1
         try:
             # Get the number of gaps between the next and current 
@@ -328,8 +300,8 @@ def reintroduce_template_spacing(template,
             # position
             pass
 
-    return (DNA.makeSequence(''.join(template_result)), \
-            DNA.makeSequence(''.join(candidate_result)),\
+    return (DNA(''.join(template_result)), \
+            DNA(''.join(candidate_result)),\
             new_gaps_in_pw_alignment)           
             
 def nearest_gap(seq,pos):
@@ -390,8 +362,8 @@ def adjust_alignment(template,candidate,new_gaps):
         del template_l[pos]
         del candidate_l[nearest_gap(candidate_l,pos)]
         
-    return (DNA.makeSequence(''.join(template_l)), \
-            DNA.makeSequence(''.join(candidate_l)))
+    return (DNA(''.join(template_l)), \
+            DNA(''.join(candidate_l)))
         
 def introduce_terminal_gaps(template,aligned_template,aligned_candidate):
     """ introduce terminal gaps from template into the aligned candidate seq
@@ -442,11 +414,11 @@ def introduce_terminal_gaps(template,aligned_template,aligned_candidate):
      original_three_prime_gaps - aligned_template_three_prime_gaps
 
     # return the sequence with the 5' and 3' gaps added
-    return DNA.makeSequence(''.join([\
+    return DNA(''.join([\
      '-'*five_prime_gaps_to_add,\
      str(aligned_candidate),\
      '-'*three_prime_gaps_to_add]),\
-     Name=aligned_candidate.Name)
+     identifier=aligned_candidate.identifier)
     
 def remove_template_terminal_gaps(candidate,template):
     """Remove template terminal gaps and corresponding bases in candidate 
@@ -461,10 +433,10 @@ def remove_template_terminal_gaps(candidate,template):
     
     degapped_candidate_len = len(candidate.degap())
     
-    candidate = DNA.makeSequence(candidate)
-    template = DNA.makeSequence(template)
+    candidate = DNA(candidate)
+    template = DNA(template)
     
-    template_gap_vector = template.gapVector()
+    template_gap_vector = template.gap_vector()
     first_non_gap = template_gap_vector.index(False)
     num_three_prime_gaps = template_gap_vector[::-1].index(False)
     last_non_gap = len(template_gap_vector) - num_three_prime_gaps
@@ -475,7 +447,7 @@ def remove_template_terminal_gaps(candidate,template):
     template = template[first_non_gap:last_non_gap]
     candidate_start_pos = first_non_gap + 1
     candidate_end_pos = degapped_candidate_len - num_three_prime_gaps
-    candidate_name = candidate.Name
+    candidate_name = candidate.identifier
     if candidate_name.endswith('RC'):
         name_delimiter = ':'
     else:
@@ -483,7 +455,7 @@ def remove_template_terminal_gaps(candidate,template):
     candidate_name = '%s%s%d..%d' %\
      (candidate_name,name_delimiter,candidate_start_pos,candidate_end_pos)
     
-    return DNA.makeSequence(candidate,Name=candidate_name), template
+    return DNA(candidate,identifier=candidate_name), template
 
 def deprecation_warning(d):
     if d:
@@ -511,7 +483,6 @@ def pynast_seq(candidate_sequence, template_alignment,
     align_unaligned_seqs_f
       Function to align sequences. Must be of the form:
        align_unaligned_seqs(seqs, moltype, params=None)
-       see cogent.app.muscle_v38.align_unaligned_seqs
     """
     deprecation_warning(kwargs)
     class SingleSeqLogger(object):
@@ -524,7 +495,7 @@ def pynast_seq(candidate_sequence, template_alignment,
             self.Data = tuple(args)
     
     l = SingleSeqLogger()
-    candidate_sequences = [(candidate_sequence.Name,str(candidate_sequence))]
+    candidate_sequences = [(candidate_sequence.identifier,str(candidate_sequence))]
     
     aligned_seq, exit_status = list(ipynast_seqs(candidate_sequences,
      template_alignment, max_hits=max_hits, min_pct=min_pct, min_len=min_len,
@@ -569,7 +540,6 @@ def ipynast_seqs(candidate_sequences, template_alignment,
     align_unaligned_seqs_f
       Function to align sequences. Must be of the form:
        align_unaligned_seqs(seqs, moltype, params=None)
-       see cogent.app.muscle_v38.align_unaligned_seqs
     log_fp
       Optional path to log file
     logger
@@ -625,7 +595,7 @@ def ipynast_seqs(candidate_sequences, template_alignment,
             template_fasta_f.write('>%s\n%s\n' % (seq_id,seq.degap()))
     else:
         # the template alignment was received as a filepath
-        template_fasta_f.write(template_alignment.degap().toFasta())
+        template_fasta_f.write(template_alignment.degap().to_fasta())
     template_fasta_f.close()
     files_to_remove.append(template_fasta_filepath)
          
@@ -674,7 +644,7 @@ def ipynast_seqs(candidate_sequences, template_alignment,
                 len(seq), # input sequence length
                 "No search results.")
             # yield the unaligned sequence and failure code
-            yield DNA.makeSequence(seq,Name=seq_id), 1
+            yield DNA(seq,identifier=seq_id), 1
         else:
             # this sequence was aligned
             if align_unaligned_seqs_f:
@@ -687,24 +657,24 @@ def ipynast_seqs(candidate_sequences, template_alignment,
                                     
             # Cast the pairwise alignments to DNA sequence objects
             pw_aligned_candidate = \
-             DNA.makeSequence(pw_aligned_candidate,Name=candidate_seq_id)
+             DNA(pw_aligned_candidate,identifier=candidate_seq_id)
             pw_aligned_template = \
-             DNA.makeSequence(pw_aligned_template,Name=template_seq_id)
+             DNA(pw_aligned_template,identifier=template_seq_id)
     
             # Remove any terminal gaps that were introduced into the template
             # sequence
             pw_aligned_candidate, pw_aligned_template = \
                 remove_template_terminal_gaps(
                 pw_aligned_candidate, pw_aligned_template)
-            candidate_seq_id = pw_aligned_candidate.Name
+            candidate_seq_id = pw_aligned_candidate.identifier
     
             # get the aligned template sequence from the template alignment
             try:
                 template_aligned_seq = \
-                 template_alignment.getGappedSeq(template_seq_id)
+                 template_alignment.get_seq(template_seq_id)
             except AttributeError:
                 template_aligned_seq = \
-                 Sequence(seq=template_alignment[template_seq_id],moltype=DNA)
+                 template_alignment.get_seq(template_seq_id)
     
             # reintroduce the gap spacing from the template alignment
             pw_aligned_template, pw_aligned_candidate, new_gaps =\
@@ -731,7 +701,7 @@ def ipynast_seqs(candidate_sequences, template_alignment,
                     len(seq), # input sequence length
                     "No search results.")
                 # yield the unaligned sequence and failure code
-                yield DNA.makeSequence(seq,Name=seq_id), 2
+                yield DNA(seq,identifier=seq_id), 2
             else:        
                 # log the alignment
                 logger.record(
@@ -744,7 +714,7 @@ def ipynast_seqs(candidate_sequences, template_alignment,
                     )
 
                 # yield the aligned sequence and sucess code
-                yield DNA.makeSequence(result,Name=candidate_seq_id), 0
+                yield DNA(result,identifier=candidate_seq_id), 0
                 
             # get the next alignment
             try:
@@ -788,7 +758,6 @@ def pynast_seqs(candidate_sequences, template_alignment, max_hits=30,
     align_unaligned_seqs_f
       Function to align sequences. Must be of the form:
        align_unaligned_seqs(seqs, moltype, params=None)
-       see cogent.app.muscle_v38.align_unaligned_seqs
     log_fp
       Optional path to log file
     logger
@@ -820,9 +789,5 @@ def pynast_seqs(candidate_sequences, template_alignment, max_hits=30,
     return aligned, failed_to_align
 
 pairwise_alignment_methods = {\
-     'muscle':muscle_align_unaligned_seqs,\
-     'mafft':mafft_align_unaligned_seqs,\
-     'clustal':clustal_align_unaligned_seqs,\
      'blast':blast_align_unaligned_seqs,\
-     'pair_hmm':pair_hmm_align_unaligned_seqs,\
      'uclust':None}
