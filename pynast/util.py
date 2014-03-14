@@ -424,14 +424,13 @@ def remove_template_terminal_gaps(candidate,template):
     
     degapped_candidate_len = len(candidate.degap())
     
-    candidate = DNA(candidate)
-    template = DNA(template)
+    #candidate = DNA(candidate)
+    #template = DNA(template)
     
     template_gap_vector = template.gap_vector()
     first_non_gap = template_gap_vector.index(False)
     num_three_prime_gaps = template_gap_vector[::-1].index(False)
     last_non_gap = len(template_gap_vector) - num_three_prime_gaps
-    
     # Construct the candidate name, which will include the range of bases
     # from the original sequence
     candidate = candidate[first_non_gap:last_non_gap]
