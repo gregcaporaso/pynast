@@ -10,9 +10,11 @@
 
 from optparse import OptionParser
 from os.path import exists, splitext
-from cogent import LoadSeqs, DNA
-from cogent.core.alignment import DenseAlignment
-from cogent.parse.fasta import MinimalFastaParser
+
+from bipy.parse.fasta import MinimalFastaParser
+from bipy.core.sequence import DNA
+from bipy.core.alignment import Alignment
+
 from pynast.util import ipynast_seqs, pairwise_alignment_methods,\
     null_status_callback_f, get_pynast_temp_dir
 from pynast.logger import NastLogger
@@ -153,8 +155,8 @@ def main():
         template_alignment.append((seq_id,seq.replace('.','-').upper()))
         
     try:
-        template_alignment = LoadSeqs(data=template_alignment,moltype=DNA,\
-         aligned=DenseAlignment)
+        template_alignment = Alignment.from_fasta_records(
+                MinimalFastaParser(template_alignment),DNA)
     except KeyError, e:
         raise KeyError,\
          'Only ACGT-. characters can be contained in template alignments.'+\
