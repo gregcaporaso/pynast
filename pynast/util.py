@@ -15,14 +15,6 @@ from tempfile import gettempdir, NamedTemporaryFile
 from shutil import copy as copy_file
 from glob import glob
 
-from cogent.util.misc import remove_files
-from cogent.core.alignment import DenseAlignment
-from cogent.align.align import make_dna_scoring_dict, global_pairwise
-from cogent.app.blast import blastn
-from cogent.app.formatdb import build_blast_db_from_seqs, \
- build_blast_db_from_fasta_path
-from cogent.parse.blast import BlastResult
-
 from bipy.core.sequence import DNA
 from bipy.core.alignment import SequenceCollection, Alignment
 from bipy.parse.fasta import MinimalFastaParser
@@ -626,7 +618,12 @@ def ipynast_seqs(candidate_sequences, template_alignment,
         if '-' in seq:
             # clean-up temporary blast database files if any were created
             pw_alignment_iterator.close()
-            remove_files(files_to_remove,error_on_missing=False)
+            for fp in files_to_remove:
+                try:
+                    remove(fp)
+                except OSError:
+                    pass
+
             raise ValueError, "Candidate sequence contains gaps. This is not supported."
         
         try:
@@ -724,8 +721,11 @@ def ipynast_seqs(candidate_sequences, template_alignment,
                 continue
 
     # clean-up temporary blast database files if any were created
-    remove_files(files_to_remove,error_on_missing=False)
-
+    for fp in files_to_remove:
+        try:
+            remove(fp)
+        except OSError:
+            pass
 
 def null_status_callback_f(x):
     """Dummy function to pass as default status_callback_f"""
