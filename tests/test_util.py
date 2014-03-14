@@ -22,9 +22,9 @@ from pynast.util import (align_two_seqs, reintroduce_template_spacing,
  remove_template_terminal_gaps, get_pynast_temp_dir)
 from pynast.logger import NastLogger
 
-from bipy.core.alignment import SequenceCollection, Alignment
-from bipy.core.sequence import DNA
-from bipy.parse.fasta import MinimalFastaParser
+from skbio.core.alignment import SequenceCollection, Alignment
+from skbio.core.sequence import DNA
+from skbio.parse.fasta import MinimalFastaParser
 
 class PyNastTests(TestCase):
     
@@ -149,12 +149,11 @@ class PyNastTests(TestCase):
               str(template_aln.get_seq(n)),\
               identifier='%s 1..%d' % (n,len(template_aln.get_seq(n).degap()))))
           
-        expected_aln = SequenceCollection.from_fasta_records(
-                expected_seqs, DNA)
+        expected_aln = SequenceCollection(expected_seqs)
         input_seqs = self.full_length_test1_template_aln.degap()
         
         # run pynast_seqs on the input sequences
-        actual = pynast_seqs(input_seqs.todict().items(),\
+        actual = pynast_seqs(input_seqs,\
          template_aln,\
          min_len=1000,min_pct=75.0,\
          align_unaligned_seqs_f=None)
@@ -448,7 +447,7 @@ class PyNastTests(TestCase):
         
         """
         candidate_sequence =\
-         Alignment.from_fasta_records(input_seq_10116.split('\n'),DNA).get_seq('10116')
+         Alignment.from_fasta_records(MinimalFastaParser(input_seq_10116.split('\n')),DNA).get_seq('10116')
         template_aln = self.full_length_test1_template_aln
         
         actual = pynast_seq(candidate_sequence,template_aln,\

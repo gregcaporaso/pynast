@@ -13,7 +13,7 @@ from tempfile import NamedTemporaryFile
 from os import remove
 from unittest import TestCase, main
 
-from bipy.parse.fasta import MinimalFastaParser
+from skbio.parse.fasta import MinimalFastaParser
 
 from pynast.logger import NastLogger
 from pynast.util import get_pynast_temp_dir

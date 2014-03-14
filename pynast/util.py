@@ -15,9 +15,9 @@ from tempfile import gettempdir, NamedTemporaryFile
 from shutil import copy as copy_file
 from glob import glob
 
-from bipy.core.sequence import DNA
-from bipy.core.alignment import SequenceCollection, Alignment
-from bipy.parse.fasta import MinimalFastaParser
+from skbio.core.sequence import DNA
+from skbio.core.alignment import SequenceCollection, Alignment
+from skbio.parse.fasta import MinimalFastaParser
 
 from pynast.logger import NastLogger
 from pynast.pycogent_backports.uclust import uclust_search_and_align_from_fasta_filepath
@@ -542,7 +542,8 @@ def ipynast_seqs(candidate_sequences, template_alignment,
     files_to_remove = []
     if type(candidate_sequences) == str:
         # filepath provided for candidate sequences
-        candidate_sequences = MinimalFastaParser(open(candidate_sequences))
+        candidate_sequences = SequenceCollection(
+                MinimalFastaParser(open(candidate_sequences)))
 
     # sequence list provided for candidate sequence -- write 
     # the seqs to a temp file to pass to uclust. This is done in all
@@ -557,8 +558,7 @@ def ipynast_seqs(candidate_sequences, template_alignment,
                                            dir=temp_dir,
                                            delete=False)
     candidate_fasta_filepath = candidate_fasta_f.name
-    for seq_id, seq in candidate_sequences:
-        candidate_fasta_f.write('>%s\n%s\n' % (seq_id,str(seq).upper()))
+    candidate_fasta_f.write(candidate_sequences.to_fasta())
     candidate_fasta_f.close()
     files_to_remove.append(candidate_fasta_filepath)
 
@@ -582,7 +582,7 @@ def ipynast_seqs(candidate_sequences, template_alignment,
         template_alignment = {}
         for seq_id,seq in MinimalFastaParser(template_alignment_f):
             template_alignment[seq_id] = seq
-            seq = Sequence(seq=seq,moltype=DNA)
+            seq = DNA(seq)
             template_fasta_f.write('>%s\n%s\n' % (seq_id,seq.degap()))
     else:
         # the template alignment was received as a filepath

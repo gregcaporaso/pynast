@@ -11,9 +11,9 @@
 from optparse import OptionParser
 from os.path import exists, splitext
 
-from bipy.parse.fasta import MinimalFastaParser
-from bipy.core.sequence import DNA
-from bipy.core.alignment import Alignment
+from skbio.parse.fasta import MinimalFastaParser
+from skbio.core.sequence import DNA
+from skbio.core.alignment import Alignment
 
 from pynast.util import ipynast_seqs, pairwise_alignment_methods,\
     null_status_callback_f, get_pynast_temp_dir
