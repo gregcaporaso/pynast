@@ -11,9 +11,10 @@
 from __future__ import division
 from tempfile import NamedTemporaryFile
 from os import remove
-from cogent import LoadSeqs, DNA
-from cogent.util.unit_test import TestCase, main
-from cogent.parse.fasta import MinimalFastaParser
+from unittest import TestCase, main
+
+from bipy.parse.fasta import MinimalFastaParser
+
 from pynast.logger import NastLogger
 from pynast.util import get_pynast_temp_dir
 

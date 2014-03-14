@@ -253,7 +253,6 @@ def reintroduce_template_spacing(template,
             # on to the next alignment position
             continue
         # store the next sequence position as it is used in several places
-        print seq_curr_pos
         seq_next_pos = seq_curr_pos + 1
         try:
             # Get the number of gaps between the next and current 
